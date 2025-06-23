@@ -1,8 +1,13 @@
 import AVFoundation
+import Combine
 
 class AudioReactiveModel: ObservableObject {
     @Published var amplitude: Float = 1.0
+    @Published var flashActive: Bool = false
+    
     private var audioEngine = AVAudioEngine()
+    private var flashTimer: Timer?
+    private var lastAmplitude: Float = 1.0
 
     init() {
         let session = AVAudioSession.sharedInstance()
@@ -30,19 +35,29 @@ class AudioReactiveModel: ObservableObject {
         let bus = 0
         let format = input.inputFormat(forBus: bus)
         input.installTap(onBus: bus, bufferSize: 256, format: format) { buffer, _ in
-            print("Audio tap called. Buffer frames: \(buffer.frameLength)")
             let rms = Self.calculateRMS(buffer: buffer)
             let amp = max(0.5, min(rms * 20, 8.0))
             DispatchQueue.main.async {
                 self.amplitude = amp
-                print("Audio amplitude: \(amp)")
+                // Trigger a flash if amplitude has a sudden spike
+                if amp > 1.5 && self.lastAmplitude <= 1.5 {
+                    self.triggerFlash()
+                }
+                self.lastAmplitude = amp
             }
         }
         do {
             try audioEngine.start()
-            print("Audio engine started.")
         } catch {
             print("Audio engine failed: \(error)")
+        }
+    }
+
+    private func triggerFlash() {
+        flashActive = true
+        flashTimer?.invalidate()
+        flashTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
+            self.flashActive = false
         }
     }
 
@@ -57,4 +72,3 @@ class AudioReactiveModel: ObservableObject {
         return sqrt(sum / Float(frameLength))
     }
 }
- 
