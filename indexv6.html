@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MIDI + Camera Demo for iOS WebMIDI Browser</title>
+  <style>
+    body { background: #222; color: #fff; text-align: center; }
+    canvas { margin-top: 20px; border: 2px solid #333; }
+  </style>
+</head>
+<body>
+  <h2>MIDI-Controlled Camera Effects (iOS WebMIDI Browser)</h2>
+  <p>Move a MIDI controller knob/slider to adjust effect.</p>
+  <video id="video" width="320" height="240" autoplay muted style="display:none"></video>
+  <canvas id="canvas" width="320" height="240"></canvas>
+  <div id="midiStatus"></div>
+  <script>
+    // Camera
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let effectAmount = 0.5;
+
+    navigator.mediaDevices.getUserMedia({video:true}).then(stream => {
+      video.srcObject = stream;
+      video.play();
+    });
+
+    // MIDI
+    function handleMIDIMessage(e) {
+      if ((e.data[0] & 0xF0) === 0xB0) {
+        const cc = e.data[1];
+        const val = e.data[2];
+        if (cc === 1) { // Use CC1 (mod wheel/knob) for effect
+          effectAmount = val / 127;
+          document.getElementById('midiStatus').textContent = `Effect: ${effectAmount.toFixed(2)}`;
+        }
+      }
+    }
+
+    if (navigator.requestMIDIAccess) {
+      navigator.requestMIDIAccess().then(access => {
+        for (let input of access.inputs.values()) {
+          input.onmidimessage = handleMIDIMessage;
+        }
+        access.onstatechange = () => {
+          for (let input of access.inputs.values()) {
+            input.onmidimessage = handleMIDIMessage;
+          }
+        };
+        document.getElementById('midiStatus').textContent = "MIDI ready!";
+      }, () => {
+        document.getElementById('midiStatus').textContent = "MIDI access denied.";
+      });
+    } else {
+      document.getElementById('midiStatus').textContent = "Web MIDI unavailable.";
+    }
+
+    // Drawing loop with effect
+    function draw() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let data = imageData.data;
+      // Simple grayscale effect controlled by MIDI
+      for (let i = 0; i < data.length; i += 4) {
+        let avg = (data[i] + data[i+1] + data[i+2]) / 3;
+        data[i] = data[i]*(1-effectAmount) + avg*effectAmount;
+        data[i+1] = data[i+1]*(1-effectAmount) + avg*effectAmount;
+        data[i+2] = data[i+2]*(1-effectAmount) + avg*effectAmount;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      requestAnimationFrame(draw);
+    }
+    draw();
+  </script>
+</body>
+</html>
